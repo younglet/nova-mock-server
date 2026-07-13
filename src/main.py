@@ -1292,7 +1292,10 @@ class Api:
         """pywebview 系统文件夹选择对话框（HTML5 拖拽拿不到文件夹内容）。"""
         try:
             import webview
-            result = webview.create_file_dialog(webview.FOLDER_DIALOG, directory='', allow_multiple=False)
+            window = webview.windows[0] if webview.windows else None
+            if window is None:
+                return {"ok": False, "error": "窗口未就绪"}
+            result = window.create_file_dialog(webview.FileDialog.FOLDER, directory='', allow_multiple=False)
             if not result:
                 return {"ok": True, "path": None}
             return {"ok": True, "path": result[0] if isinstance(result, (list, tuple)) else result}
