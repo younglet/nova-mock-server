@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='80' font-size='80'%3E%F0%9F%93%A1%3C/text%3E%3C/svg%3E">
+  <title>Nova Mock Server</title>
+  <style>
+    :root {
+      --bg: #1a1a1a;
+      --panel: #232323;
+      --panel-2: #2a2a2a;
+      --border: #3a3a3a;
+      --text: #e0e0e0;
+      --muted: #888;
+      --accent: #4a9eff;
+      --accent-hover: #6bb3ff;
+      --success: #4ade80;
+      --error: #f87171;
+      --warn: #fbbf24;
+      --code: #d4d4d4;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      padding: 14px;
+      gap: 10px;
+      user-select: none;
+    }
+    select, input, textarea, button {
+      font-family: inherit;
+      font-size: 13px;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    select:focus, input:focus, textarea:focus { border-color: var(--accent); }
+    select { cursor: pointer; font-weight: 600; padding-right: 28px; }
+    select:hover { background: var(--panel-2); }
+    input[type=text], input[type=number] { flex: 1; min-width: 0; }
+    textarea {
+      width: 100%;
+      min-height: 70px;
+      resize: vertical;
+      font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      padding: 9px 28px;
+      transition: background 0.15s, transform 0.05s;
+    }
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    button:active:not(:disabled) { transform: scale(0.98); }
+    button:disabled { background: #555; color: #999; cursor: not-allowed; }
+    button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+    button.secondary:hover:not(:disabled) { background: var(--panel-2); border-color: var(--accent); color: var(--accent); }
+    button.danger { background: #6a2a2a; color: #fca5a5; }
+    button.danger:hover:not(:disabled) { background: #8a3030; }
+
+    .row { display: flex; gap: 8px; align-items: center; }
+    
+
+    /* 顶部控制条 */
+    .control-bar {
+      display: flex; gap: 10px; align-items: flex-end;
+      padding: 12px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .control-bar .field { display: flex; flex-direction: column; gap: 4px; }
+    .control-bar .field label {
+      font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
+    }
+    .control-bar .field input { width: 100px; }
+    .control-bar .actions { display: flex; gap: 8px; margin-left: auto; }
+    .control-bar .addr-row {
+      flex: 1; min-width: 0;
+      display: flex; align-items: baseline; gap: 6px;
+      padding: 8px 12px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      font-family: "Cascadia Code", Consolas, monospace; font-size: 12px;
+      overflow: hidden;
+    }
+    .control-bar .addr-url {
+      color: var(--code); font-weight: 600;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+    }
+    .control-bar .addr-port {
+      color: var(--muted); font-weight: 600;
+      flex-shrink: 0;
+    }
+    .control-bar .addr-port.zero { display: none; }
+
+    /* 折叠面板 */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .panel-header:hover { background: var(--panel-2); }
+    .panel-header .arrow { transition: transform 0.15s; font-size: 9px; color: var(--muted); }
+    .panel-header .title { font-weight: 600; font-size: 12px; flex: 1; }
+    .panel-header .badge {
+      display: inline-block; background: var(--accent); color: white;
+      border-radius: 8px; padding: 1px 7px; font-size: 10px;
+      font-variant-numeric: tabular-nums; font-weight: 600;
+    }
+    .panel-header .badge.zero { background: #555; }
+    .panel-body {
+      display: none;
+      padding: 12px;
+      border-top: 1px solid var(--border);
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .panel-body.open { display: block; }
+    .panel-header.open .arrow { transform: rotate(90deg); }
+
+    /* 模块勾选 */
+    .module-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    }
+    .module-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .module-card:hover { border-color: var(--accent); }
+    .module-card.on { border-color: var(--accent); background: rgba(74, 158, 255, 0.08); }
+    .module-card input[type=checkbox] {
+      appearance: none; -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border: 2px solid var(--border); border-radius: 3px;
+      cursor: pointer; flex-shrink: 0; margin-top: 1px;
+      transition: all 0.15s; position: relative;
+    }
+    .module-card input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
+    .module-card input[type=checkbox]:checked::after {
+      content: '✓'; position: absolute; left: 50%; top: 50%;
+      transform: translate(-50%, -50%); color: white; font-size: 11px; font-weight: 700;
+    }
+    .module-card .info { flex: 1; min-width: 0; }
+    .module-card .name { font-weight: 600; font-size: 13px; }
+    .module-card .desc { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .module-card .count {
+      display: inline-block; background: var(--panel-2); color: var(--muted);
+      border-radius: 8px; padding: 1px 6px; font-size: 10px;
+      font-variant-numeric: tabular-nums; font-weight: 600; margin-left: 4px;
+    }
+
+    /* 静态文件区 */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 6px;
+      padding: 24px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      transition: all 0.15s;
+      cursor: pointer;
+      background: var(--bg);
+    }
+    .drop-zone:hover, .drop-zone.dragging {
+      border-color: var(--accent);
+      background: rgba(74, 158, 255, 0.05);
+      color: var(--accent);
+    }
+    .drop-zone .icon { font-size: 32px; margin-bottom: 8px; opacity: 0.6; }
+    .file-list { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+    .file-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .file-item .name { flex: 1; font-family: "Cascadia Code", Consolas, monospace; color: var(--code); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-item .size { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .file-item .url { color: var(--muted); font-size: 11px; font-family: "Cascadia Code", Consolas, monospace; }
+    .file-item .del {
+      background: transparent; border: none; color: var(--muted);
+      padding: 2px 8px; cursor: pointer; font-size: 14px;
+    }
+    .file-item .del:hover { color: var(--error); background: transparent; }
+
+    /* 自定义端点 */
+    .ep-list { display: flex; flex-direction: column; gap: 6px; }
+    .ep-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+    }
+    .ep-item .method {
+      font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 3px;
+      font-family: "Cascadia Code", Consolas, monospace; min-width: 56px; text-align: center;
+    }
+    .ep-item .path { font-family: "Cascadia Code", Consolas, monospace; color: var(--code); flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ep-item .status-badge { background: var(--panel-2); color: var(--muted); padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ep-item .delay-badge { background: var(--panel-2); color: var(--muted); padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ep-empty { color: var(--muted); font-size: 12px; padding: 8px; text-align: center; font-style: italic; }
+
+    /* 端点编辑器 */
+    .ep-editor {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      display: flex; flex-direction: column; gap: 8px;
+      margin-top: 8px;
+    }
+    .ep-editor .row { display: flex; gap: 8px; }
+    .ep-editor .row .field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+    .ep-editor .row .field.fixed { flex: 0 0 110px; }
+    .ep-editor label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+
+    .methods-edit { display: flex; gap: 4px; }
+    .method-edit-btn {
+      flex: 1; padding: 6px 0; font-size: 11px; font-weight: 700;
+      letter-spacing: 0.5px; border-radius: 4px; cursor: pointer;
+      transition: all 0.15s; text-align: center;
+      background: transparent;
+      border: 1px solid var(--border);
+    }
+    .method-edit-btn[data-method="GET"]    { color: #4ade80; }
+    .method-edit-btn[data-method="POST"]   { color: #fbbf24; }
+    .method-edit-btn[data-method="PUT"]    { color: #60a5fa; }
+    .method-edit-btn[data-method="DELETE"] { color: #f87171; }
+    .method-edit-btn[data-method="PATCH"]  { color: #a78bfa; }
+    .method-edit-btn:hover:not(.active) { background: var(--panel-2); }
+    .method-edit-btn[data-method="GET"].active    { background: #4ade80; color: #0a1f12; border-color: #4ade80; }
+    .method-edit-btn[data-method="POST"].active   { background: #fbbf24; color: #2a1f08; border-color: #fbbf24; }
+    .method-edit-btn[data-method="PUT"].active    { background: #60a5fa; color: #0a182a; border-color: #60a5fa; }
+    .method-edit-btn[data-method="DELETE"].active { background: #f87171; color: #2a0a0a; border-color: #f87171; }
+    .method-edit-btn[data-method="PATCH"].active  { background: #a78bfa; color: #1a0a2a; border-color: #a78bfa; }
+
+    /* 日志区 */
+    .log-wrap {
+      flex: 1; min-height: 0;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .log-toolbar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel-2);
+    }
+    .log-toolbar .title { font-weight: 600; font-size: 12px; flex: 1; }
+    .log-toolbar .stat { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .log-toolbar .stat b { color: var(--text); font-weight: 600; }
+    .log-toolbar button {
+      padding: 4px 12px; font-size: 11px; background: transparent;
+      color: var(--text); border: 1px solid var(--border); border-radius: 4px;
+    }
+    .log-toolbar button:hover { background: var(--panel); border-color: var(--accent); color: var(--accent); }
+    .log-toolbar label.toggle {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 11px; color: var(--muted); cursor: pointer;
+    }
+    .log-toolbar label.toggle input { margin: 0; }
+
+    .log-list {
+      flex: 1; min-height: 0;
+      overflow-y: auto;
+      font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .log-list::-webkit-scrollbar { width: 10px; }
+    .log-list::-webkit-scrollbar-track { background: transparent; }
+    .log-list::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 5px; }
+    .log-list::-webkit-scrollbar-thumb:hover { background: #4a4a4a; }
+    .log-empty {
+      height: 100%; display: flex; align-items: center; justify-content: center;
+      color: var(--muted); font-style: italic; font-size: 12px;
+    }
+    .log-entry {
+      padding: 8px 12px;
+      border-bottom: 1px solid #2a2a2a;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .log-entry:hover { background: var(--panel-2); }
+    .log-entry.expanded { background: var(--panel-2); }
+    .log-entry .top {
+      display: flex; align-items: center; gap: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+    .log-entry .ts { color: var(--muted); font-size: 11px; }
+    .log-entry .method-tag {
+      font-weight: 700; font-size: 11px; padding: 2px 6px; border-radius: 3px;
+      min-width: 52px; text-align: center;
+    }
+    .log-entry .method-tag.m-GET    { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+    .log-entry .method-tag.m-POST   { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+    .log-entry .method-tag.m-PUT    { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
+    .log-entry .method-tag.m-DELETE { background: rgba(248, 113, 113, 0.15); color: #f87171; }
+    .log-entry .method-tag.m-PATCH  { background: rgba(167, 139, 250, 0.15); color: #a78bfa; }
+    .log-entry .method-tag.m-SYSTEM { background: rgba(167, 139, 250, 0.15); color: #c4b5fd; }
+    .log-entry .path-text { color: var(--code); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .log-entry .status-tag {
+      font-weight: 700; padding: 1px 6px; border-radius: 3px;
+      font-size: 11px; font-variant-numeric: tabular-nums;
+    }
+    .log-entry .status-tag.s-2xx { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+    .log-entry .status-tag.s-3xx { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
+    .log-entry .status-tag.s-4xx { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+    .log-entry .status-tag.s-5xx { background: rgba(248, 113, 113, 0.15); color: #f87171; }
+    .log-entry .status-tag.s-0   { background: rgba(248, 113, 113, 0.15); color: #f87171; }
+    .log-entry .elapsed { color: var(--muted); font-size: 11px; min-width: 50px; text-align: right; }
+    .log-entry .kind-tag {
+      font-size: 10px; color: var(--muted); padding: 1px 5px;
+      background: #2a2a2a; border-radius: 3px;
+    }
+    .log-entry .details {
+      display: none;
+      margin-top: 8px;
+      padding: 8px;
+      background: var(--bg);
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--code);
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+    .log-entry.expanded .details { display: block; }
+    .log-entry .details .section-title {
+      color: var(--muted); font-weight: 600;
+      text-transform: uppercase; letter-spacing: 1px; font-size: 10px;
+      margin-top: 6px; margin-bottom: 3px;
+    }
+    .log-entry .details .section-title:first-child { margin-top: 0; }
+  </style>
+</head>
+<body>
+  <!-- 顶部控制条 -->
+  <div class="control-bar">
+    <div class="field" style="flex:1; min-width:0;">
+      <label>监听地址 LISTEN ON</label>
+      <div class="addr-row">
+        <span class="addr-url" id="addrDisplay">http://__LAN_IP__</span>
+        <span class="addr-port" id="portSuffix">:<span id="portDisplay">80</span></span>
+      </div>
+    </div>
+    <div class="field">
+      <label>端口 PORT</label>
+      <input type="number" id="port" value="80" min="1" max="65535">
+    </div>
+    <div class="actions">
+      <button id="btnToggle" style="background:#22c55e; min-width:120px;">▶ 启动</button>
+    </div>
+  </div>
+
+  <!-- 配置面板（可折叠） -->
+  <div class="panel">
+    <div class="panel-header" data-target="modules">
+      <span class="arrow">▶</span>
+      <span class="title">内置模块 <span style="font-weight:400; color:var(--muted);">/ Built-in Modules</span></span>
+      <span class="badge" id="modulesBadge">3</span>
+    </div>
+    <div class="panel-body" id="modules">
+      <div class="module-grid">
+        <label class="module-card on" data-module="light">
+          <input type="checkbox" data-module="light" checked>
+          <div class="info">
+            <div class="name">智能灯 <span class="count" id="cnt-light">5</span></div>
+            <div class="desc">开关 / 亮度 / 色温 / RGB</div>
+          </div>
+        </label>
+        <label class="module-card on" data-module="user">
+          <input type="checkbox" data-module="user" checked>
+          <div class="info">
+            <div class="name">用户信息 <span class="count" id="cnt-user">6</span></div>
+            <div class="desc">列表 / 详情 / 登录 / CRUD</div>
+          </div>
+        </label>
+        <label class="module-card on" data-module="tools">
+          <input type="checkbox" data-module="tools" checked>
+          <div class="info">
+            <div class="name">实用工具 <span class="count" id="cnt-tools">10</span></div>
+            <div class="desc">random / now / uuid / echo 等</div>
+          </div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header" data-target="statics">
+      <span class="arrow">▶</span>
+      <span class="title">静态文件 <span style="font-weight:400; color:var(--muted);">/ Static Files</span></span>
+      <span class="badge zero" id="staticsBadge">0</span>
+    </div>
+    <div class="panel-body" id="statics">
+      <div class="drop-zone" id="dropZone">
+        <div class="icon">📂</div>
+        <div><b>拖文件到此处</b> 或 <span style="color:var(--accent);">点击选择</span></div>
+        <div style="margin-top:4px; font-size:11px;">单文件 ≤ 50 MB · 文件夹请用下方按钮</div>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button class="secondary" id="btnPickFolder" style="flex:1;">📁 选择文件夹</button>
+      </div>
+      <div class="file-list" id="fileList"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header" data-target="custom">
+      <span class="arrow">▶</span>
+      <span class="title">自定义端点 <span style="font-weight:400; color:var(--muted);">/ Custom Endpoints</span></span>
+      <span class="badge zero" id="customBadge">0</span>
+    </div>
+    <div class="panel-body" id="custom">
+      <button class="secondary" id="btnAddEp">+ 添加端点</button>
+      <div id="epEditor"></div>
+      <div class="ep-list" id="epList"></div>
+    </div>
+  </div>
+
+  <!-- 日志区（启动后铺满剩余空间） -->
+  <div class="log-wrap">
+    <div class="log-toolbar">
+      <span class="title">请求日志 <span style="font-weight:400; color:var(--muted);">/ Request Log</span></span>
+      <a id="docsLink" href="#" target="_blank" style="display:none; color:var(--accent); text-decoration:none; font-size:12px; font-weight:600; padding:4px 10px; border:1px solid var(--border); border-radius:4px;">📖 API 文档</a>
+      <span class="stat">总计 <b id="logCount">0</b></span>
+      <label class="toggle"><input type="checkbox" id="autoScroll" checked> 自动滚动</label>
+      <button id="btnClearLog">清空</button>
+      <button id="btnCopyLog">复制全部</button>
+    </div>
+    <div class="log-list" id="logList">
+      <div class="log-empty">尚未启动服务器，或暂无请求</div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const $$ = sel => document.querySelectorAll(sel);
+
+    // ============================================================
+    // 状态
+    // ============================================================
+    let state = {
+      running: false,
+      port: 80,
+      actual_port: null,
+      modules: { light: true, user: true, tools: true },
+      customEndpoints: [],
+      statics: [],
+      logCount: 0,
+    };
+    let editingEp = null; // null | {method, path, status, body, delay_ms}
+
+    // ============================================================
+    // 折叠面板
+    // ============================================================
+    $$('.panel-header').forEach(h => {
+      h.addEventListener('click', () => {
+        const target = document.getElementById(h.dataset.target);
+        const open = target.classList.toggle('open');
+        h.classList.toggle('open', open);
+      });
+    });
+
+    // ============================================================
+    // 端口输入 + 状态联动
+    // ============================================================
+    // LAN IP 由 Python 在加载前直接注入 HTML（占位符 __LAN_IP__ 替换为真实 IP）
+    const _initAddr = document.getElementById('addrDisplay').textContent;
+    let lanIp = _initAddr.replace(/^https?:\/\//, '') || '127.0.0.1';
+
+    function updateAddr() {
+      const p = parseInt($('port').value) || 80;
+      $('addrDisplay').textContent = `http://${lanIp}`;
+      $('portDisplay').textContent = p;
+      $('portSuffix').classList.toggle('zero', p === 80);
+    }
+    $('port').addEventListener('input', updateAddr);
+    updateAddr();
+
+    // ============================================================
+    // 模块勾选
+    // ============================================================
+    $$('.module-card input[type=checkbox]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const mod = cb.dataset.module;
+        state.modules[mod] = cb.checked;
+        cb.parentElement.classList.toggle('on', cb.checked);
+        const enabled = Object.values(state.modules).filter(Boolean).length;
+        const badge = $('modulesBadge');
+        badge.textContent = enabled;
+        badge.classList.toggle('zero', enabled === 0);
+      });
+    });
+
+    // ============================================================
+    // 静态文件
+    // ============================================================
+    const dropZone = $('dropZone');
+    dropZone.addEventListener('click', () => $('fileInput')?.click());
+
+    // 创建隐藏的 file input
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.multiple = true;
+    fileInput.style.display = 'none';
+    fileInput.id = 'fileInput';
+    document.body.appendChild(fileInput);
+    fileInput.addEventListener('change', async e => {
+      const files = Array.from(e.target.files);
+      for (const f of files) await uploadFile(f);
+      fileInput.value = '';
+    });
+
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('dragging');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+    dropZone.addEventListener('drop', async e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragging');
+      const files = Array.from(e.dataTransfer.files);
+      for (const f of files) await uploadFile(f);
+    });
+
+    async function uploadFile(file) {
+      if (file.size > 50 * 1024 * 1024) {
+        alert(`文件 ${file.name} 超过 50 MB 上限`);
+        return;
+      }
+      const b64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result.split(',')[1]);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+      let res = await window.pywebview.api.add_static_file(file.name, b64, false);
+      if (!res.ok && res.conflict) {
+        if (confirm(`文件 “${file.name}” 已存在，是否替换？\n\n点 “确定” 覆盖，点 “取消” 跳过。`)) {
+          res = await window.pywebview.api.add_static_file(file.name, b64, true);
+        } else {
+          return;  // 跳过
+        }
+      }
+      if (res.ok) {
+        await refreshStatics();
+      } else {
+        alert('上传失败: ' + res.error);
+      }
+    }
+
+    $('btnPickFolder').addEventListener('click', async () => {
+      const res = await window.pywebview.api.select_folder();
+      if (!res.ok) { alert(res.error); return; }
+      if (!res.path) return;
+      let r = await window.pywebview.api.add_static_folder(res.path, false);
+      // 跳过的文件询问是否覆盖
+      if (r.ok && r.skipped && r.skipped.length > 0) {
+        const list = r.skipped.map(s => `· ${s.file}`).join('\n');
+        if (confirm(`文件夹里有 ${r.skipped.length} 个文件已存在：\n${list}\n\n是否全部覆盖？\n点 “确定” 覆盖，点 “取消” 跳过这些。`)) {
+          r = await window.pywebview.api.add_static_folder(res.path, true);
+        }
+      }
+      if (r.ok) {
+        const parts = [`已添加 ${r.added.length} 个文件`];
+        if (r.skipped && r.skipped.length) parts.push(`跳过 ${r.skipped.length} 个`);
+        if (r.errors && r.errors.length) parts.push(`失败 ${r.errors.length} 个`);
+        let msg = parts.join('，');
+        if (r.errors && r.errors.length) {
+          msg += '\n' + r.errors.map(e => `· ${e.file}: ${e.error}`).join('\n');
+        }
+        alert(msg);
+        await refreshStatics();
+      } else {
+        alert('失败: ' + r.error);
+      }
+    });
+
+    async function refreshStatics() {
+      const list = await window.pywebview.api.list_static();
+      state.statics = list;
+      const badge = $('staticsBadge');
+      badge.textContent = list.length;
+      badge.classList.toggle('zero', list.length === 0);
+      const container = $('fileList');
+      if (list.length === 0) { container.innerHTML = ''; return; }
+      container.innerHTML = list.map(f => `
+        <div class="file-item" data-virtual="${f.virtual}">
+          <span class="name" title="${f.name}">${f.name}</span>
+          <span class="size">${formatBytes(f.size)}</span>
+          <span class="url">/static/${f.virtual}</span>
+          <button class="del" title="删除">×</button>
+        </div>
+      `).join('');
+      $$('.file-item .del').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const item = btn.closest('.file-item');
+          await window.pywebview.api.remove_static(item.dataset.virtual);
+          await refreshStatics();
+        });
+      });
+    }
+
+    function formatBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+      return (n/1024/1024).toFixed(2) + ' MB';
+    }
+
+    // ============================================================
+    // 自定义端点
+    // ============================================================
+    $('btnAddEp').addEventListener('click', () => {
+      editingEp = { method: 'GET', path: '/my/api', status: 200, body: '{\n  "hello": "world"\n}', delay_ms: 0 };
+      renderEpEditor();
+    });
+
+    function renderEpEditor() {
+      const ed = $('epEditor');
+      if (!editingEp) { ed.innerHTML = ''; return; }
+      const ep = editingEp;
+      ed.innerHTML = `
+        <div class="ep-editor">
+          <div class="row">
+            <div class="field fixed">
+              <label>方法 METHOD</label>
+              <div class="methods-edit">
+                ${['GET','POST','PUT','DELETE','PATCH'].map(m =>
+                  `<button class="method-edit-btn ${m===ep.method?'active':''}" data-method="${m}">${m}</button>`
+                ).join('')}
+              </div>
+            </div>
+            <div class="field">
+              <label>路径 PATH</label>
+              <input type="text" id="epPath" value="${escapeAttr(ep.path)}" placeholder="/api/foo">
+            </div>
+          </div>
+          <div class="row">
+            <div class="field fixed">
+              <label>状态 STATUS</label>
+              <input type="number" id="epStatus" value="${ep.status}" min="100" max="599">
+            </div>
+            <div class="field">
+              <label>延迟 DELAY (ms)</label>
+              <input type="number" id="epDelay" value="${ep.delay_ms}" min="0" max="30000">
+            </div>
+          </div>
+          <div class="field">
+            <label>响应体 BODY (JSON 或 Text)</label>
+            <textarea id="epBody" rows="5">${escapeText(ep.body)}</textarea>
+          </div>
+          <div class="row">
+            <button id="btnSaveEp">保存</button>
+            <button class="secondary" id="btnCancelEp">取消</button>
+            <span style="flex:1;"></span>
+            <span style="color:var(--muted); font-size:11px;">提示: JSON 自动校验；非法则原样返回</span>
+          </div>
+        </div>
+      `;
+      $$('.method-edit-btn').forEach(b => {
+        b.addEventListener('click', () => {
+          ep.method = b.dataset.method;
+          renderEpEditor();
+        });
+      });
+      $('epPath').addEventListener('input', e => ep.path = e.target.value);
+      $('epStatus').addEventListener('input', e => ep.status = parseInt(e.target.value) || 200);
+      $('epDelay').addEventListener('input', e => ep.delay_ms = parseInt(e.target.value) || 0);
+      $('epBody').addEventListener('input', e => ep.body = e.target.value);
+      $('btnSaveEp').addEventListener('click', () => {
+        if (!ep.path || !ep.path.startsWith('/')) { alert('路径必须以 / 开头'); return; }
+        state.customEndpoints.push({ ...ep });
+        editingEp = null;
+        renderEpEditor();
+        renderEpList();
+      });
+      $('btnCancelEp').addEventListener('click', () => { editingEp = null; renderEpEditor(); });
+    }
+
+    function renderEpList() {
+      const list = $('epList');
+      const badge = $('customBadge');
+      badge.textContent = state.customEndpoints.length;
+      badge.classList.toggle('zero', state.customEndpoints.length === 0);
+      if (state.customEndpoints.length === 0) {
+        list.innerHTML = '<div class="ep-empty">尚未添加端点</div>';
+        return;
+      }
+      list.innerHTML = state.customEndpoints.map((ep, i) => `
+        <div class="ep-item" data-idx="${i}">
+          <span class="method" style="background:rgba(74,222,128,0.15); color:#4ade80;">${ep.method}</span>
+          <span class="path">${escapeText(ep.path)}</span>
+          <span class="status-badge">${ep.status}</span>
+          ${ep.delay_ms ? `<span class="delay-badge">${ep.delay_ms}ms</span>` : ''}
+          <button class="secondary" data-act="edit" style="padding:4px 10px; font-size:11px;">编辑</button>
+          <button class="danger" data-act="del" style="padding:4px 10px; font-size:11px;">删除</button>
+        </div>
+      `).join('');
+      $$('.ep-item button').forEach(b => {
+        b.addEventListener('click', () => {
+          const idx = parseInt(b.closest('.ep-item').dataset.idx);
+          if (b.dataset.act === 'del') {
+            state.customEndpoints.splice(idx, 1);
+            renderEpList();
+          } else if (b.dataset.act === 'edit') {
+            editingEp = { ...state.customEndpoints[idx] };
+            renderEpEditor();
+          }
+        });
+      });
+    }
+
+    function escapeText(s) { return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+    function escapeAttr(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+    // ============================================================
+    // 模块计数填充（运行时从后端拿）
+    // ============================================================
+    async function loadModuleCounts() {
+      try {
+        const docs = await window.pywebview.api.get_endpoint_docs();
+        const counts = { light: 0, user: 0, tools: 0 };
+        docs.forEach(d => counts[d.module]++);
+        $('cnt-light').textContent  = counts.light;
+        $('cnt-user').textContent   = counts.user;
+        $('cnt-tools').textContent  = counts.tools;
+      } catch (e) { /* ignore */ }
+    }
+
+    // ============================================================
+    // 启停（一个按钮切换状态）
+    // ============================================================
+    function setToggleBtn(running) {
+      const btn = $('btnToggle');
+      if (running) {
+        btn.textContent = '⏹ 停止';
+        btn.style.background = '#dc2626';
+      } else {
+        btn.textContent = '▶ 启动';
+        btn.style.background = '#22c55e';
+      }
+    }
+
+    $('btnToggle').addEventListener('click', async () => {
+      if (state.running) {
+        await window.pywebview.api.stop();
+        state.running = false;
+        setToggleBtn(false);
+        $('port').disabled = false;
+        $('docsLink').style.display = 'none';
+        updateAddr();
+      } else {
+        const port = parseInt($('port').value) || 80;
+        const orig = $('btnToggle').textContent;
+        $('btnToggle').disabled = true;
+        $('btnToggle').textContent = '启动中…';
+        const res = await window.pywebview.api.start(
+          port, { ...state.modules }, state.customEndpoints.map(e => ({...e}))
+        );
+        $('btnToggle').disabled = false;
+        if (!res.ok) {
+          setToggleBtn(false);
+          alert('启动失败: ' + res.error);
+          return;
+        }
+        state.running = true;
+        state.port = res.port;
+        setToggleBtn(true);
+        $('port').disabled = true;
+        $('portDisplay').textContent = res.port;
+        $('portSuffix').classList.toggle('zero', res.port === 80);
+        const portPart = res.port === 80 ? '' : ':' + res.port;
+        $('docsLink').href = `http://${lanIp}${portPart}/docs`;
+        $('docsLink').style.display = 'inline-block';
+        if (res.fallback_msg) {
+          setTimeout(() => alert(res.fallback_msg), 100);
+        }
+      }
+    });
+
+    // ============================================================
+    // 日志
+    // ============================================================
+    async function pollLogs() {
+      try {
+        const items = await window.pywebview.api.pull_logs(100);
+        if (items && items.length) renderLogs(items);
+      } catch (e) {}
+      setTimeout(pollLogs, 500);
+    }
+
+    function renderLogs(items) {
+      const list = $('logList');
+      const empty = list.querySelector('.log-empty');
+      if (empty) empty.remove();
+      const auto = $('autoScroll').checked;
+      const wasAtBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 30;
+      items.forEach(item => {
+        const e = document.createElement('div');
+        e.className = 'log-entry';
+        const statusClass = item.status >= 500 ? 's-5xx' : item.status >= 400 ? 's-4xx' : item.status >= 300 ? 's-3xx' : item.status >= 200 ? 's-2xx' : 's-0';
+        const tsShort = (item.ts || '').split('T').pop() || '';
+        e.innerHTML = `
+          <div class="top">
+            <span class="ts">${tsShort}</span>
+            <span class="method-tag m-${item.method}">${item.method}</span>
+            <span class="path-text">${escapeText(item.path)}${item.query && Object.keys(item.query).length ? '  ?' + new URLSearchParams(item.query).toString() : ''}</span>
+            <span class="status-tag ${statusClass}">${item.status || 'ERR'}</span>
+            <span class="elapsed">${item.elapsed_ms}ms</span>
+            <span class="kind-tag">${item.kind}</span>
+          </div>
+          <div class="details">
+            <div class="section-title">Headers</div>
+            <div>${escapeText(JSON.stringify(item.headers || {}, null, 2))}</div>
+            ${item.query && Object.keys(item.query).length ? `
+              <div class="section-title">Query</div>
+              <div>${escapeText(JSON.stringify(item.query, null, 2))}</div>
+            ` : ''}
+            ${item.body ? `
+              <div class="section-title">Request Body</div>
+              <div>${escapeText(item.body)}</div>
+            ` : ''}
+          </div>
+        `;
+        e.addEventListener('click', () => e.classList.toggle('expanded'));
+        list.appendChild(e);
+        state.logCount++;
+      });
+      $('logCount').textContent = state.logCount;
+      // 保留最多 1000 条
+      while (list.children.length > 1000) list.removeChild(list.firstChild);
+      if (auto && (wasAtBottom || items.length === 0 === false)) {
+        list.scrollTop = list.scrollHeight;
+      }
+    }
+
+    $('btnClearLog').addEventListener('click', async () => {
+      await window.pywebview.api.clear_logs();
+      $('logList').innerHTML = '<div class="log-empty">日志已清空</div>';
+      state.logCount = 0;
+      $('logCount').textContent = 0;
+    });
+
+    $('btnCopyLog').addEventListener('click', async () => {
+      const items = await window.pywebview.api.pull_logs(10000);
+      const text = JSON.stringify(items, null, 2);
+      await window.pywebview.api.copy_to_clipboard(text);
+      const orig = $('btnCopyLog').textContent;
+      $('btnCopyLog').textContent = '已复制 ✓';
+      setTimeout(() => $('btnCopyLog').textContent = orig, 1200);
+    });
+
+    // ============================================================
+    // 启动
+    // ============================================================
+    loadModuleCounts();
+    renderEpList();
+    pollLogs();
+  </script>
+</body>
+</html>
